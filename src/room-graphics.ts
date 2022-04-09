@@ -8,6 +8,7 @@ export class RoomGraphics {
     id: string
     diffDirectory: string
     directory: string
+    historyDirectory: string
     chunkX: number
     chunkY: number
     fullCanvas: Canvas.Canvas | null
@@ -16,12 +17,15 @@ export class RoomGraphics {
     drawCtx: Canvas.CanvasRenderingContext2D | null
     lastestFull: string | null
     lastestDiff: string | null
+    history: { x: number; y: number; color: string; timestamp: Date }[]
     saveThrottled: () => void
-    
-    constructor(imagesPath: string, id: string, chunkX: number, chunkY: number) {
+    saveListeners: (() => void)[]
+
+    constructor(imagesPath: string, historyPath: string, id: string, chunkX: number, chunkY: number) {
         this.id = id
         this.diffDirectory = path.join(imagesPath, id, `d-${chunkX}-${chunkY}`)
         this.directory = path.join(imagesPath, id, `f-${chunkX}-${chunkY}`)
+        this.historyDirectory = path.join(historyPath, id, `${chunkX}-${chunkY}`)
         this.chunkX = chunkX
         this.chunkY = chunkY
         this.lastestFull = null
@@ -30,6 +34,8 @@ export class RoomGraphics {
         this.fullCtx = null
         this.drawCanvas = null
         this.drawCtx = null
+        this.saveListeners = []
+        this.history = []
         this.saveThrottled = _.throttle(this.save.bind(this), 500)
     }
 
@@ -44,7 +50,7 @@ export class RoomGraphics {
             return
         }
 
-        const files = await fs.readdir(this.directory)
+        const files = (await fs.readdir(this.directory)).filter(file => file.endsWith('.png'))
         const latest = files.reduce((a, b) => {
             return parseInt(a) > parseInt(b) ? a : b
         }, '')
@@ -52,6 +58,8 @@ export class RoomGraphics {
         if (!latest) {
             return
         }
+
+        this.lastestFull = path.join(this.directory, latest)
 
         const image = await Canvas.loadImage(path.join(this.directory, latest))
         this.fullCtx.drawImage(image, 0, 0)
@@ -61,27 +69,53 @@ export class RoomGraphics {
         if (!this.fullCanvas || !this.fullCtx || !this.drawCanvas || !this.drawCtx) {
             return
         }
+        const history = this.history.slice(0)
+        this.history.length = 0
         const image = this.fullCanvas.toBuffer('image/png')
+        const diffImage = this.drawCanvas.toBuffer('image/png')
+
         await fs.mkdir(this.directory, { recursive: true })
         const fullPath = path.join(this.directory, `${+Date.now()}.png`)
         await fs.writeFile(fullPath, image)
         this.lastestFull = fullPath
 
-        const diffImage = this.drawCanvas.toBuffer('image/png')
         this.drawCtx.clearRect(0, 0, chunkSize, chunkSize)
         await fs.mkdir(this.diffDirectory, { recursive: true })
         const diffPath = path.join(this.diffDirectory, `${+Date.now()}.png`)
         await fs.writeFile(diffPath, diffImage)
         this.lastestDiff = diffPath
+
+        await fs.mkdir(this.historyDirectory, { recursive: true })
+        await fs.appendFile(path.join(this.historyDirectory, 'history.json'), history.map(e => JSON.stringify(e) + '\n').join(''))
+
+        this.saveListeners.forEach(callback => {
+            try {
+                callback()
+            } catch (e) {
+                console.error(e)
+            }
+        })
     }
 
     async drawPixel(x: number, y: number, color: string) {
         if (!this.fullCanvas || !this.fullCtx || !this.drawCanvas || !this.drawCtx) {
             throw new Error('Not loaded')
         }
+        this.history.push({ x, y, color, timestamp: new Date() })
         this.drawCtx.fillStyle = color
         this.drawCtx.fillRect(x, y, 1, 1)
         this.fullCtx.drawImage(this.drawCanvas, 0, 0)
         this.saveThrottled()
+    }
+
+    listenSave(callback: () => void) {
+        this.saveListeners.push(callback)
+    }
+
+    unlistenSave(callback: () => void) {
+        const index = this.saveListeners.indexOf(callback)
+        if (index !== -1) {
+            this.saveListeners.splice(index, 1)
+        }
     }
 }

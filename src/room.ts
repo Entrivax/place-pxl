@@ -5,12 +5,14 @@ export class Room {
     users: User[]
     sizeX: number
     sizeY: number
+    colors: string[] | null
     
-    constructor(id: string, sizeX: number, sizeY: number) {
+    constructor(id: string, sizeX: number, sizeY: number, colors: string[] | null) {
         this.id = id
         this.users = []
         this.sizeX = sizeX
         this.sizeY = sizeY
+        this.colors = colors
     }
 
     configureRoom(options: RoomOptions) {
