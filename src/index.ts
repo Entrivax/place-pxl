@@ -4,6 +4,7 @@ import http = require('http')
 import { Room } from './room'
 import { chunkSize, RoomGraphics } from './room-graphics'
 import path = require('path')
+import fs = require('fs/promises')
 
 const port = 3000
 const app = express()
@@ -92,9 +93,64 @@ wss.on('connection', (ws, req) => {
 
 app.use('/', express.static('front/build'))
 
-createRoom('room1')
+async function main() {
+    let roomsData = {
+        'room1': {
+            sizeX: 256,
+            sizeY: 256,
+            colors: [
+                '#6d001a',
+                '#be0039',
+                '#ff4500',
+                '#ffa800',
+                '#ffd635',
+                '#fff8b8',
+                '#00a368',
+                '#00cc78',
+                '#7eed56',
+                '#00756f',
+                '#009eaa',
+                '#00ccc0',
+                '#2450a4',
+                '#3690ea',
+                '#51e9f4',
+                '#493ac1',
+                '#6a5cff',
+                '#94b3ff',
+                '#811e9f',
+                '#b44ac0',
+                '#e4abff',
+                '#de107f',
+                '#ff3881',
+                '#ff99aa',
+                '#6d482f',
+                '#9c6926',
+                '#ffb470',
+                '#000000',
+                '#515252',
+                '#898d90',
+                '#d4d7d9',
+                '#ffffff'
+            ]
+        }
+    }
+    try {
+        const content = await fs.readFile('./config.json', 'utf8')
+        roomsData = JSON.parse(content)
+    } catch (e) {
+        console.error('Failed to read config.json, using default config')
+    }
 
-function createRoom(id: string) {
+    for (const [id, roomData] of Object.entries(roomsData)) {
+        createRoom(id, roomData.sizeX, roomData.sizeY, roomData.colors)
+    }
+
+    server.listen(3000, () => {
+        console.log(`listening on *:${port}`)
+    })
+}
+
+function createRoom(id: string, sizeX: number, sizeY: number, colors: string[]) {
     const room = new Room(id, 256, 256, [
         '#6d001a',
         '#be0039',
@@ -169,6 +225,4 @@ function getImageUrl(absolutePath: string) {
     return absolutePath.slice(lastIndexOf).replace(/\\/g, '/')
 }
 
-server.listen(3000, () => {
-    console.log(`listening on *:${port}`)
-})
+main()

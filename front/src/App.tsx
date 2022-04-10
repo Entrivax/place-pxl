@@ -13,7 +13,8 @@ function App() {
   const [scale, setScale] = useState(1)
   const [viewport, setViewport] = useState({ x: 0, y: 0, width: 0, height: 0 })
   const [gridEnabled, setGridEnabled] = useState(true)
-  const [setPixel] = useWs('room1', viewport, setImage, setColors)
+  const room = new URLSearchParams(window.location.search).get('room') || 'room1'
+  const [setPixel] = useWs(room, viewport, setImage, setColors)
 
   function drag(offset: {x: number; y: number}) {
     setTarget({
