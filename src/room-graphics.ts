@@ -2,6 +2,7 @@ import fs = require('fs/promises')
 import path = require('path')
 import Canvas = require('canvas')
 import _ = require('lodash')
+import { ChunkLoader, IChunkSaver } from './chunk-io'
 
 export const chunkSize = 64
 export class RoomGraphics {
@@ -18,10 +19,11 @@ export class RoomGraphics {
     lastestFull: string | null
     lastestDiff: string | null
     history: { x: number; y: number; color: string; timestamp: Date }[]
+    chunkSaver: IChunkSaver
     saveThrottled: () => void
     saveListeners: (() => void)[]
 
-    constructor(imagesPath: string, historyPath: string, id: string, chunkX: number, chunkY: number) {
+    constructor(imagesPath: string, historyPath: string, id: string, chunkX: number, chunkY: number, chunkSaver: IChunkSaver) {
         this.id = id
         this.diffDirectory = path.join(imagesPath, id, `d-${chunkX}-${chunkY}`)
         this.directory = path.join(imagesPath, id, `f-${chunkX}-${chunkY}`)
@@ -36,6 +38,7 @@ export class RoomGraphics {
         this.drawCtx = null
         this.saveListeners = []
         this.history = []
+        this.chunkSaver = chunkSaver
         this.saveThrottled = _.throttle(this.save.bind(this), 500)
     }
 
@@ -50,7 +53,7 @@ export class RoomGraphics {
             return
         }
 
-        const files = (await fs.readdir(this.directory)).filter(file => file.endsWith('.png'))
+        const files = (await fs.readdir(this.directory)).filter(file => file.endsWith('.png') || file.endsWith('.qoi'))
         const latest = files.reduce((a, b) => {
             return parseInt(a) > parseInt(b) ? a : b
         }, '')
@@ -61,7 +64,7 @@ export class RoomGraphics {
 
         this.lastestFull = path.join(this.directory, latest)
 
-        const image = await Canvas.loadImage(path.join(this.directory, latest))
+        const image = await new ChunkLoader().load(path.join(this.directory, latest))
         this.fullCtx.drawImage(image, 0, 0)
     }
 
@@ -71,19 +74,20 @@ export class RoomGraphics {
         }
         const history = this.history.slice(0)
         this.history.length = 0
-        const image = this.fullCanvas.toBuffer('image/png')
-        const diffImage = this.drawCanvas.toBuffer('image/png')
+
+        const image = Canvas.createCanvas(this.fullCanvas.width, this.fullCanvas.height)
+        const imageCtx = image.getContext('2d')
+        imageCtx.drawImage(this.fullCanvas, 0, 0)
+        const diffImage = Canvas.createCanvas(this.drawCanvas.width, this.drawCanvas.height)
+        const diffCtx = diffImage.getContext('2d')
+        diffCtx.drawImage(this.drawCanvas, 0, 0)
 
         await fs.mkdir(this.directory, { recursive: true })
-        const fullPath = path.join(this.directory, `${+Date.now()}.png`)
-        await fs.writeFile(fullPath, image)
-        this.lastestFull = fullPath
+        this.lastestFull = await this.chunkSaver.save(image, imageCtx, this.directory, (+Date.now()).toString(10))
 
         this.drawCtx.clearRect(0, 0, chunkSize, chunkSize)
         await fs.mkdir(this.diffDirectory, { recursive: true })
-        const diffPath = path.join(this.diffDirectory, `${+Date.now()}.png`)
-        await fs.writeFile(diffPath, diffImage)
-        this.lastestDiff = diffPath
+        this.lastestDiff = await this.chunkSaver.save(image, imageCtx, this.diffDirectory, (+Date.now()).toString(10))
 
         await fs.mkdir(this.historyDirectory, { recursive: true })
         await fs.appendFile(path.join(this.historyDirectory, 'history.json'), history.map(e => JSON.stringify(e) + '\n').join(''))

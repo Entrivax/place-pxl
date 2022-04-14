@@ -5,6 +5,7 @@ import { Room } from './room'
 import { chunkSize, RoomGraphics } from './room-graphics'
 import path = require('path')
 import fs = require('fs/promises')
+import { IChunkSaver, PngChunkSaver, QoiChunkSaver } from './chunk-io'
 
 const port = 3000
 const app = express()
@@ -12,6 +13,7 @@ const server = http.createServer(app)
 const wss = new ws.Server({ server })
 const imagesPath = path.resolve('./images')
 const historyPath = path.resolve('./history')
+let chunkSaver: IChunkSaver
 
 const rooms: Record<string, Room> = {}
 const roomGraphics: Record<string, Record<number, Record<number, RoomGraphics>>> = {}
@@ -94,54 +96,68 @@ wss.on('connection', (ws, req) => {
 app.use('/', express.static('front/build'))
 
 async function main() {
-    let roomsData = {
-        'room1': {
-            sizeX: 256,
-            sizeY: 256,
-            colors: [
-                '#6d001a',
-                '#be0039',
-                '#ff4500',
-                '#ffa800',
-                '#ffd635',
-                '#fff8b8',
-                '#00a368',
-                '#00cc78',
-                '#7eed56',
-                '#00756f',
-                '#009eaa',
-                '#00ccc0',
-                '#2450a4',
-                '#3690ea',
-                '#51e9f4',
-                '#493ac1',
-                '#6a5cff',
-                '#94b3ff',
-                '#811e9f',
-                '#b44ac0',
-                '#e4abff',
-                '#de107f',
-                '#ff3881',
-                '#ff99aa',
-                '#6d482f',
-                '#9c6926',
-                '#ffb470',
-                '#000000',
-                '#515252',
-                '#898d90',
-                '#d4d7d9',
-                '#ffffff'
-            ]
+    let config = {
+        saveFormat: 'qoi',
+        rooms: {
+            'room1': {
+                sizeX: 256,
+                sizeY: 256,
+                colors: [
+                    '#6d001a',
+                    '#be0039',
+                    '#ff4500',
+                    '#ffa800',
+                    '#ffd635',
+                    '#fff8b8',
+                    '#00a368',
+                    '#00cc78',
+                    '#7eed56',
+                    '#00756f',
+                    '#009eaa',
+                    '#00ccc0',
+                    '#2450a4',
+                    '#3690ea',
+                    '#51e9f4',
+                    '#493ac1',
+                    '#6a5cff',
+                    '#94b3ff',
+                    '#811e9f',
+                    '#b44ac0',
+                    '#e4abff',
+                    '#de107f',
+                    '#ff3881',
+                    '#ff99aa',
+                    '#6d482f',
+                    '#9c6926',
+                    '#ffb470',
+                    '#000000',
+                    '#515252',
+                    '#898d90',
+                    '#d4d7d9',
+                    '#ffffff'
+                ]
+            }
         }
     }
     try {
         const content = await fs.readFile('./config.json', 'utf8')
-        roomsData = JSON.parse(content)
+        config = JSON.parse(content)
     } catch (e) {
         console.error('Failed to read config.json, using default config')
     }
 
-    for (const [id, roomData] of Object.entries(roomsData)) {
+    switch (config.saveFormat) {
+        case 'qoi':
+            chunkSaver = new QoiChunkSaver()
+            break
+        case 'png':
+            chunkSaver = new PngChunkSaver()
+            break
+        default:
+            throw new Error('Unknown save format')
+    }
+
+    for (const [id, roomData] of Object.entries(config.rooms)) {
         createRoom(id, roomData.sizeX, roomData.sizeY, roomData.colors)
     }
 
@@ -181,7 +197,7 @@ async function getRoomGraphics(id: string, chunkX: number, chunkY: number) {
     }
     let chunkGraphics = chunk[chunkY]
     if (!chunkGraphics) {
-        chunkGraphics = chunk[chunkY] = new RoomGraphics(imagesPath, historyPath, id, chunkX, chunkY)
+        chunkGraphics = chunk[chunkY] = new RoomGraphics(imagesPath, historyPath, id, chunkX, chunkY, chunkSaver)
         await chunkGraphics.load()
     }
     return chunkGraphics

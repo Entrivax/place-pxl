@@ -1,6 +1,45 @@
 import { useEffect, useRef } from "react";
+import QOI from 'qoijs'
 
 const chunkSize = 64
+async function loadImage(url: string): Promise<HTMLCanvasElement> {
+    switch (url.slice(url.lastIndexOf('.'))) {
+        case '.png': {
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+                const img = new Image()
+                img.addEventListener('load', () => {
+                    resolve(img)
+                })
+                img.addEventListener('error', (e) => {
+                    reject(e)
+                })
+                img.src = url
+            })
+            canvas.width = img.naturalWidth
+            ctx?.drawImage(img, 0, 0)
+            return canvas
+        }
+        case '.qoi': {
+            const data = await (await fetch(url, {
+                method: 'GET'
+            })).arrayBuffer()
+            const decoded = QOI.decode(data, 0, data.byteLength, 4)
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+            canvas.width = decoded.width
+            canvas.height = decoded.height
+            const imageData = new ImageData(decoded.width, decoded.height, {
+                colorSpace: 'srgb'
+            })
+            imageData.data.set(decoded.data)
+            ctx?.putImageData(imageData, 0, 0)
+            return canvas
+        }
+    }
+    throw new Error('Unsupported file type')
+}
 export function useWs(room: string, viewport: { x: number, y: number, width: number, height: number }, setImage: React.Dispatch<React.SetStateAction<HTMLCanvasElement | undefined>>, setColors: React.Dispatch<React.SetStateAction<string[] | null>>) {
     const ws = useRef<WebSocket | null>(null)
     const image = useRef<HTMLCanvasElement | undefined>()
@@ -49,16 +88,7 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
                     canvas.width = size.current?.width ?? 1
                     canvas.height = size.current?.height ?? 1
                     const ctx = canvas.getContext('2d')
-                    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-                        const img = new Image()
-                        img.addEventListener('load', () => {
-                            resolve(img)
-                        })
-                        img.addEventListener('error', (e) => {
-                            reject(e)
-                        })
-                        img.src = data.data
-                    })
+                    const img = await loadImage(data.data)
                     if (image.current) {
                         ctx?.drawImage(image.current, 0, 0)
                     }
@@ -75,16 +105,7 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
                     canvas.width = size.current?.width ?? 1
                     canvas.height = size.current?.height ?? 1
                     const ctx = canvas.getContext('2d')
-                    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-                        const img = new Image()
-                        img.addEventListener('load', () => {
-                            resolve(img)
-                        })
-                        img.addEventListener('error', (e) => {
-                            reject(e)
-                        })
-                        img.src = data.data
-                    })
+                    const img = await loadImage(data.data)
                     if (image.current) {
                         ctx?.drawImage(image.current, 0, 0)
                     }
