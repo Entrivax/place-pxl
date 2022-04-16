@@ -63,6 +63,24 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
     }
     useEffect(() => {
         ws.current = new WebSocket(`ws${window.location.protocol === "https:" ? "s" : ""}://${window.location.host}/websocket?id=${room}`);
+        let pingInterval: number
+        ws.current.addEventListener('open', () => {
+            pingInterval = window.setInterval(() => {
+                ws.current?.send(JSON.stringify({
+                    type: 'ping'
+                }))
+            }, 10000)
+        })
+        ws.current.addEventListener('close', () => {
+            if (pingInterval != null) {
+                clearInterval(pingInterval)
+            }
+        })
+        ws.current.addEventListener('error', () => {
+            if (pingInterval != null) {
+                clearInterval(pingInterval)
+            }
+        })
         ws.current.addEventListener('message', async (event) => {
             const data = JSON.parse(event.data);
             switch (data.type) {

@@ -75,6 +75,8 @@ wss.on('connection', (ws, req) => {
             }
             listeners.push({ chunkGraphics, listener })
             chunkGraphics.listenSave(listener)
+        } else if (data.type === 'ping') {
+            ws.send('{"type":"pong"}')
         }
     })
 
