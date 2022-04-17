@@ -1,9 +1,9 @@
 declare module 'qoijs' {
-    export function encode(colorData: Uint8Array|Uint8ClampedArray, description: {
-        width: int
-        height: int
-        channels: int
-        colorspace: int
+    export function encode(colorData: Uint8Array | Uint8ClampedArray, description: {
+        width: number
+        height: number
+        channels: number
+        colorspace: number
     }): ArrayBuffer
-    export function decode(arrayBuffer: ArrayBuffer, byteOffset?: int, byteLength?: int, outputChannels?: int): {channels: number, data: Uint8Array, colorspace: number, width: number, error: boolean, height: number}
+    export function decode(arrayBuffer: ArrayBuffer, byteOffset?: number, byteLength?: number, outputChannels?: number): { channels: number, data: Uint8Array, colorspace: number, width: number, error: boolean, height: number }
 }

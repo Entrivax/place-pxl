@@ -21,6 +21,9 @@ const roomGraphics: Record<string, Record<number, Record<number, RoomGraphics>>>
 app.use('/images', express.static('images'))
 
 wss.on('connection', (ws, req) => {
+    if (!req.url) {
+        return
+    }
     const roomId = new URLSearchParams(req.url.slice(req.url.indexOf('?'))).get('id')
     if (!roomId || !rooms[roomId]) {
         ws.close()
@@ -176,7 +179,7 @@ function createRoom(id: string, sizeX: number, sizeY: number, colors: string[]) 
 
 async function putPixel(id: string, x: number, y: number, color: string) {
     const room = rooms[id]
-    if (!room || x < 0 || y < 0 || x >= room.sizeX || y >= room.sizeY || room.colors.indexOf(color) === -1) {
+    if (!room || x < 0 || y < 0 || x >= room.sizeX || y >= room.sizeY || (room.colors && room.colors.indexOf(color) === -1)) {
         return
     }
     const chunkX = Math.floor(x / chunkSize)
