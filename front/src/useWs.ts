@@ -46,8 +46,8 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
     const size = useRef<{width: number; height: number} | null>(null)
     const subbedChunks = useRef<{[chunk: string]: boolean}>({})
     if (ws.current && ws.current.readyState === WebSocket.OPEN && size.current) {
-        for (let x = Math.floor(Math.max(viewport.x / chunkSize, 0)); x < Math.max(viewport.width + viewport.x, size.current.width) / chunkSize; x++) {
-            for (let y = Math.floor(Math.max(viewport.y / chunkSize, 0)); y < Math.max(viewport.height + viewport.y, size.current.height) / chunkSize; y++) {
+        for (let x = Math.floor(Math.max(viewport.x / chunkSize, 0)); x < Math.min(viewport.width + viewport.x, size.current.width) / chunkSize; x++) {
+            for (let y = Math.floor(Math.max(viewport.y / chunkSize, 0)); y < Math.min(viewport.height + viewport.y, size.current.height) / chunkSize; y++) {
                 const key = `${x};${y}`
                 if (subbedChunks.current[key]) {
                     continue

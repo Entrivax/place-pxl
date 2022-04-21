@@ -69,11 +69,8 @@ html, body {
 
 .position-viewer {
     position: absolute;
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    width: 100%;
-
+    left: 50%;
+    transform: translateX(-50%);
 }
 
 .position {
@@ -96,6 +93,7 @@ html, body {
 }
 
 .tools .tool {
+    position: relative;
     padding: 0.5em;
     border-radius: 0.5em;
     border: 1px solid #ccc;
@@ -106,4 +104,13 @@ html, body {
 
 .tools .tool.activated {
     background-color: #bbb;
+}
+
+.flex {
+    display: flex;
+    flex-direction: row;
+}
+
+.flex-grow-1 {
+    flex-grow: 1;
 }

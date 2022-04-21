@@ -1,25 +1,32 @@
 import { useEffect, useRef } from "react"
 import useWindowSize from "./useWindowResize"
 
-export const CanvasRenderer: React.FC<{image: HTMLCanvasElement | undefined, target: {x: number, y: number}, scale: number, updateViewport: (viewport: {x: number, y: number, width: number, height: number}) => void, gridEnabled: boolean}> = function (props) {
+export const CanvasRenderer: React.FC<{
+    image: HTMLCanvasElement | undefined,
+    target: {x: number, y: number},
+    scale: number,
+    updateViewport: (viewport: {x: number, y: number, width: number, height: number}) => void,
+    gridEnabled: boolean,
+    templateData: ImageData | null,
+    templatePosition: {x: number, y: number},
+    templateAlpha: number
+}> = function (props) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [[windowWidth, windowHeight]] = useWindowSize()
-    const {image, target, scale, gridEnabled, updateViewport} = props
+    const {image, target, scale, gridEnabled, updateViewport, templateData, templatePosition, templateAlpha} = props
     useEffect(() => {
-        redraw(canvasRef, image, target, scale, gridEnabled)
+        redraw(canvasRef, image, target, scale, gridEnabled, templateData, templatePosition, templateAlpha)
         updateViewport(getViewport(canvasRef, target, scale))
-    }, [image, target, scale, gridEnabled])
+    }, [image, target, scale, gridEnabled, templateData, templatePosition, templateAlpha])
     useEffect(() => {
         const canvas = canvasRef.current
         if (canvas) {
-            redraw(canvasRef, image, target, scale, gridEnabled)
+            redraw(canvasRef, image, target, scale, gridEnabled, templateData, templatePosition, templateAlpha)
             updateViewport(getViewport(canvasRef, target, scale))
         }
-    }, [windowWidth, windowHeight, image, target, scale, gridEnabled])
+    }, [windowWidth, windowHeight, image, target, scale, gridEnabled, templateData, templatePosition, templateAlpha])
 
-    
-
-    redraw(canvasRef, image, target, scale, gridEnabled)
+    redraw(canvasRef, image, target, scale, gridEnabled, templateData, templatePosition, templateAlpha)
     return (
         <canvas ref={canvasRef} id="canvas" width="500" height="500"></canvas>
     )
@@ -38,7 +45,7 @@ function getViewport(canvasRef: React.RefObject<HTMLCanvasElement>, target: {x: 
     }
 }
 
-function redraw(canvasRef: React.RefObject<HTMLCanvasElement>, image: HTMLCanvasElement | undefined, target: {x: number, y: number}, scale: number, gridEnabled: boolean) {
+function redraw(canvasRef: React.RefObject<HTMLCanvasElement>, image: HTMLCanvasElement | undefined, target: {x: number, y: number}, scale: number, gridEnabled: boolean, templateData: ImageData | null, templatePosition: {x: number, y: number}, templateAlpha: number) {
     const canvas = canvasRef.current
     if (canvas) {
         canvas.width = canvas.offsetWidth * window.devicePixelRatio
@@ -57,6 +64,18 @@ function redraw(canvasRef: React.RefObject<HTMLCanvasElement>, image: HTMLCanvas
                 ctx.drawImage(image, offsetX, offsetY, image.width * scale, image.height * scale)
                 if (scale > 20 && gridEnabled) {
                     drawGrid(image, canvas, ctx, offsetX, offsetY, scale)
+                }
+            }
+            if (templateData) {
+                const templateCanvas = document.createElement('canvas')
+                templateCanvas.width = templateData.width
+                templateCanvas.height = templateData.height
+                const templateCtx = templateCanvas.getContext('2d')
+                if (templateCtx) {
+                    templateCtx.putImageData(templateData, 0, 0)
+                    ctx.globalAlpha = templateAlpha
+                    ctx.drawImage(templateCanvas, templatePosition.x * scale + offsetX, templatePosition.y * scale + offsetY, templateData.width * scale, templateData.height * scale)
+                    ctx.globalAlpha = 1
                 }
             }
         }
