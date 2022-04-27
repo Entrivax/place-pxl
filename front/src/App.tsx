@@ -38,8 +38,8 @@ function App() {
       return
     }
     const localPosition = {
-      x: Math.floor(position.x / scale + target.x),
-      y: Math.floor(position.y / scale + target.y)
+      x: Math.floor(position.x / scale * window.devicePixelRatio + target.x),
+      y: Math.floor(position.y / scale * window.devicePixelRatio + target.y)
     }
     
     setPixel(localPosition.x, localPosition.y, color)
