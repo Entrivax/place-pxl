@@ -1,10 +1,8 @@
 import fs = require('fs/promises')
 import path = require('path')
-import Canvas = require('canvas')
 import _ = require('lodash')
 import { ChunkLoader, IChunkSaver } from './chunk-io'
 
-export const chunkSize = 64
 export class RoomGraphics {
     id: string
     diffDirectory: string
@@ -12,41 +10,39 @@ export class RoomGraphics {
     historyDirectory: string
     chunkX: number
     chunkY: number
-    fullCanvas: Canvas.Canvas | null
-    fullCtx: Canvas.CanvasRenderingContext2D | null
-    drawCanvas: Canvas.Canvas | null
-    drawCtx: Canvas.CanvasRenderingContext2D | null
+    chunkSize: number
+    fullCanvas: Uint8Array | null
+    drawCanvas: Uint8Array | null
     lastestFull: string | null
     lastestDiff: string | null
     history: { x: number; y: number; color: string; timestamp: Date }[]
     chunkSaver: IChunkSaver
+    chunkLoader: ChunkLoader
     saveThrottled: () => void
     saveListeners: (() => void)[]
 
-    constructor(imagesPath: string, historyPath: string, id: string, chunkX: number, chunkY: number, chunkSaver: IChunkSaver) {
+    constructor(imagesPath: string, historyPath: string, id: string, chunkX: number, chunkY: number, chunkSize: number, chunkSaver: IChunkSaver, chunkLoader: ChunkLoader) {
         this.id = id
         this.diffDirectory = path.join(imagesPath, id, `d-${chunkX}-${chunkY}`)
         this.directory = path.join(imagesPath, id, `f-${chunkX}-${chunkY}`)
         this.historyDirectory = path.join(historyPath, id, `${chunkX}-${chunkY}`)
         this.chunkX = chunkX
         this.chunkY = chunkY
+        this.chunkSize = chunkSize
         this.lastestFull = null
         this.lastestDiff = null
         this.fullCanvas = null
-        this.fullCtx = null
         this.drawCanvas = null
-        this.drawCtx = null
         this.saveListeners = []
         this.history = []
         this.chunkSaver = chunkSaver
+        this.chunkLoader = chunkLoader
         this.saveThrottled = _.throttle(this.save.bind(this), 500)
     }
 
     async load() {
-        this.fullCanvas = Canvas.createCanvas(chunkSize, chunkSize)
-        this.fullCtx = this.fullCanvas.getContext('2d')
-        this.drawCanvas = Canvas.createCanvas(chunkSize, chunkSize)
-        this.drawCtx = this.drawCanvas.getContext('2d')
+        this.fullCanvas = new Uint8Array(this.chunkSize * this.chunkSize * 4)
+        this.drawCanvas = new Uint8Array(this.chunkSize * this.chunkSize * 4)
 
         const directoryExists = await fs.stat(this.directory).then(stat => stat.isDirectory()).catch(() => false)
         if (!directoryExists) {
@@ -64,30 +60,27 @@ export class RoomGraphics {
 
         this.lastestFull = path.join(this.directory, latest)
 
-        const image = await new ChunkLoader().load(path.join(this.directory, latest))
-        this.fullCtx.drawImage(image, 0, 0)
+        const image = await this.chunkLoader.load(path.join(this.directory, latest))
+        this.fullCanvas.set(image)
     }
 
     async save() {
-        if (!this.fullCanvas || !this.fullCtx || !this.drawCanvas || !this.drawCtx) {
+        if (!this.fullCanvas
+            || !this.drawCanvas
+        ) {
             return
         }
         const history = this.history.slice(0)
         this.history.length = 0
 
-        const image = Canvas.createCanvas(this.fullCanvas.width, this.fullCanvas.height)
-        const imageCtx = image.getContext('2d')
-        imageCtx.drawImage(this.fullCanvas, 0, 0)
-        const diffImage = Canvas.createCanvas(this.drawCanvas.width, this.drawCanvas.height)
-        const diffCtx = diffImage.getContext('2d')
-        diffCtx.drawImage(this.drawCanvas, 0, 0)
-
         await fs.mkdir(this.directory, { recursive: true })
-        this.lastestFull = await this.chunkSaver.save(image, imageCtx, this.directory, (+Date.now()).toString(10))
-
-        this.drawCtx.clearRect(0, 0, chunkSize, chunkSize)
         await fs.mkdir(this.diffDirectory, { recursive: true })
-        this.lastestDiff = await this.chunkSaver.save(image, imageCtx, this.diffDirectory, (+Date.now()).toString(10))
+
+        this.lastestFull = await this.chunkSaver.save(this.fullCanvas, this.chunkSize, this.directory, (+Date.now()).toString(10))
+
+        this.lastestDiff = await this.chunkSaver.save(this.drawCanvas, this.chunkSize, this.diffDirectory, (+Date.now()).toString(10))
+
+        this.drawCanvas.fill(0, 0, this.drawCanvas.length)
 
         await fs.mkdir(this.historyDirectory, { recursive: true })
         await fs.appendFile(path.join(this.historyDirectory, 'history.json'), history.map(e => JSON.stringify(e) + '\n').join(''))
@@ -102,14 +95,24 @@ export class RoomGraphics {
     }
 
     async drawPixel(x: number, y: number, color: string) {
-        if (!this.fullCanvas || !this.fullCtx || !this.drawCanvas || !this.drawCtx) {
+        if (!this.fullCanvas
+            || !this.drawCanvas
+        ) {
             throw new Error('Not loaded')
         }
         this.history.push({ x, y, color, timestamp: new Date() })
-        this.drawCtx.fillStyle = color
-        this.drawCtx.fillRect(x, y, 1, 1)
-        this.fullCtx.drawImage(this.drawCanvas, 0, 0)
+        const parsedColor = this._parseColor(color)
+        const offset = (x + y * this.chunkSize) * 4
+        this.fullCanvas.set(parsedColor, offset)
+        this.drawCanvas.set(parsedColor, offset)
         this.saveThrottled()
+    }
+
+    private _parseColor(hexColor: string): Uint8Array {
+        const r = parseInt(hexColor.slice(1, 3), 16)
+        const g = parseInt(hexColor.slice(3, 5), 16)
+        const b = parseInt(hexColor.slice(5, 7), 16)
+        return new Uint8Array([r, g, b, 255])
     }
 
     listenSave(callback: () => void) {

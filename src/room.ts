@@ -6,13 +6,15 @@ export class Room {
     sizeX: number
     sizeY: number
     colors: string[] | null
+    chunkSize: number
     
-    constructor(id: string, sizeX: number, sizeY: number, colors: string[] | null) {
+    constructor(id: string, sizeX: number, sizeY: number, colors: string[] | null, chunkSize: number) {
         this.id = id
         this.users = []
         this.sizeX = sizeX
         this.sizeY = sizeY
         this.colors = colors
+        this.chunkSize = chunkSize
     }
 
     configureRoom(options: RoomOptions) {

@@ -1,9 +1,11 @@
 {
     "saveFormat": "qoi",
+    "workersCount": 4,
     "rooms": {
         "room1": {
             "sizeX": 256,
             "sizeY": 256,
+            "chunkSize": 64,
             "colors": [
                 "#6d001a",
                 "#be0039",

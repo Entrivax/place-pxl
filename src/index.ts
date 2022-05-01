@@ -2,21 +2,18 @@ import ws = require('ws')
 import express = require('express')
 import http = require('http')
 import { Room } from './room'
-import { chunkSize, RoomGraphics } from './room-graphics'
-import path = require('path')
 import fs = require('fs/promises')
-import { IChunkSaver, PngChunkSaver, QoiChunkSaver } from './chunk-io'
+import { DrawingWorkersMap } from './drawing-worker'
 
 const port = 3000
 const app = express()
 const server = http.createServer(app)
 const wss = new ws.Server({ server })
-const imagesPath = path.resolve('./images')
-const historyPath = path.resolve('./history')
-let chunkSaver: IChunkSaver
 
 const rooms: Record<string, Room> = {}
-const roomGraphics: Record<string, Record<number, Record<number, RoomGraphics>>> = {}
+let drawingWorkersMap: DrawingWorkersMap | null = null
+type RoomGraphicsInfo = { lastestFull: string, lastestDiff: string, listeners: (() => void)[] }
+const roomGraphics: Record<string, Record<number, Record<number, RoomGraphicsInfo>>> = {}
 
 app.use('/images', express.static('images'))
 
@@ -29,13 +26,14 @@ wss.on('connection', (ws, req) => {
         ws.close()
         return
     }
-    const listeners: { chunkGraphics: RoomGraphics, listener: () => void }[] = []
+    const listeners: { chunkGraphics: RoomGraphicsInfo, listener: () => void }[] = []
     const room = rooms[roomId]
     ws.send(JSON.stringify({
         type: 'init',
         sizeX: room.sizeX,
         sizeY: room.sizeY,
-        colors: room.colors
+        colors: room.colors,
+        chunkSize: room.chunkSize
     }))
     ws.on('message', async message => {
         let data = null
@@ -76,8 +74,8 @@ wss.on('connection', (ws, req) => {
                     data: getImageUrl(chunkGraphics.lastestFull)
                 }))
             }
+            chunkGraphics.listeners.push(listener)
             listeners.push({ chunkGraphics, listener })
-            chunkGraphics.listenSave(listener)
         } else if (data.type === 'ping') {
             ws.send('{"type":"pong"}')
         }
@@ -92,7 +90,10 @@ wss.on('connection', (ws, req) => {
 
     function unlisten() {
         listeners.forEach(({ chunkGraphics, listener }) => {
-            chunkGraphics.unlistenSave(listener)
+            const index = chunkGraphics.listeners.indexOf(listener)
+            if (index !== -1) {
+                chunkGraphics.listeners.splice(index, 1)
+            }
         })
         listeners.length = 0
     }
@@ -103,10 +104,12 @@ app.use('/', express.static('front/build'))
 async function main() {
     let config = {
         saveFormat: 'qoi',
+        workersCount: 4,
         rooms: {
             'room1': {
                 sizeX: 256,
                 sizeY: 256,
+                chunkSize: 64,
                 colors: [
                     '#6d001a',
                     '#be0039',
@@ -151,19 +154,25 @@ async function main() {
         console.error('Failed to read config.json, using default config')
     }
 
-    switch (config.saveFormat) {
-        case 'qoi':
-            chunkSaver = new QoiChunkSaver()
-            break
-        case 'png':
-            chunkSaver = new PngChunkSaver()
-            break
-        default:
-            throw new Error('Unknown save format')
+    for (const [id, roomData] of Object.entries(config.rooms)) {
+        createRoom(id, roomData.sizeX, roomData.sizeY, roomData.colors, roomData.chunkSize)
     }
 
-    for (const [id, roomData] of Object.entries(config.rooms)) {
-        createRoom(id, roomData.sizeX, roomData.sizeY, roomData.colors)
+    drawingWorkersMap = new DrawingWorkersMap(config, async (roomId, chunkX, chunkY, lastestFull, lastestDiff) => {
+        let chunkGraphics = await getRoomGraphics(roomId, chunkX, chunkY)
+        if (!chunkGraphics) {
+            return
+        }
+        chunkGraphics.lastestDiff = lastestDiff
+        chunkGraphics.lastestFull = lastestFull
+
+        for (const listener of chunkGraphics.listeners) {
+            listener()
+        }
+    })
+
+    for (let i = 0; i < config.workersCount; i++) {
+        await drawingWorkersMap.createWorker()
     }
 
     server.listen(3000, () => {
@@ -171,8 +180,8 @@ async function main() {
     })
 }
 
-function createRoom(id: string, sizeX: number, sizeY: number, colors: string[]) {
-    const room = new Room(id, sizeX, sizeY, colors)
+function createRoom(id: string, sizeX: number, sizeY: number, colors: string[], chunkSize: number) {
+    const room = new Room(id, sizeX, sizeY, colors, chunkSize)
     rooms[id] = room
     roomGraphics[id] = {}
 }
@@ -182,17 +191,15 @@ async function putPixel(id: string, x: number, y: number, color: string) {
     if (!room || x < 0 || y < 0 || x >= room.sizeX || y >= room.sizeY || (room.colors && room.colors.indexOf(color) === -1)) {
         return
     }
+    const chunkSize = room.chunkSize
     const chunkX = Math.floor(x / chunkSize)
     const chunkY = Math.floor(y / chunkSize)
-    let chunkGraphics = await getRoomGraphics(id, chunkX, chunkY)
-    if (!chunkGraphics) {
-        return
-    }
-    await chunkGraphics.drawPixel(x % chunkSize, y % chunkSize, color)
+    await drawingWorkersMap?.getWorker(id, chunkX, chunkY).putPixel(id, x, y, color)
 }
 
 async function getRoomGraphics(id: string, chunkX: number, chunkY: number) {
     const room = rooms[id]
+    const chunkSize = room.chunkSize
     if (!room || chunkX < 0 || chunkX < 0 || chunkX >= room.sizeX / chunkSize || chunkX >= room.sizeY / chunkSize) {
         return null
     }
@@ -202,8 +209,15 @@ async function getRoomGraphics(id: string, chunkX: number, chunkY: number) {
     }
     let chunkGraphics = chunk[chunkY]
     if (!chunkGraphics) {
-        chunkGraphics = chunk[chunkY] = new RoomGraphics(imagesPath, historyPath, id, chunkX, chunkY, chunkSaver)
-        await chunkGraphics.load()
+        let data = await drawingWorkersMap?.getWorker(id, chunkX, chunkY).getChunkPaths(id, chunkX, chunkY)
+        if (!data) {
+            return null
+        }
+        chunkGraphics = chunk[chunkY] = {
+            lastestDiff: data?.diff,
+            lastestFull: data?.full,
+            listeners: []
+        }
     }
     return chunkGraphics
 }
@@ -214,3 +228,15 @@ function getImageUrl(absolutePath: string) {
 }
 
 main()
+
+export type Config = {
+    saveFormat: string;
+    rooms: {
+        room1: {
+            sizeX: number;
+            sizeY: number;
+            chunkSize: number;
+            colors: string[];
+        };
+    };
+}

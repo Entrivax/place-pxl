@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import QOI from 'qoijs'
 
-const chunkSize = 64
 async function loadImage(url: string): Promise<HTMLCanvasElement> {
     switch (url.slice(url.lastIndexOf('.'))) {
         case '.png': {
@@ -43,9 +42,10 @@ async function loadImage(url: string): Promise<HTMLCanvasElement> {
 export function useWs(room: string, viewport: { x: number, y: number, width: number, height: number }, setImage: React.Dispatch<React.SetStateAction<HTMLCanvasElement | undefined>>, setColors: React.Dispatch<React.SetStateAction<string[] | null>>) {
     const ws = useRef<WebSocket | null>(null)
     const image = useRef<HTMLCanvasElement | undefined>()
-    const size = useRef<{width: number; height: number} | null>(null)
+    const size = useRef<{width: number; height: number; chunkSize: number} | null>(null)
     const subbedChunks = useRef<{[chunk: string]: boolean}>({})
     if (ws.current && ws.current.readyState === WebSocket.OPEN && size.current) {
+        const chunkSize = size.current.chunkSize
         for (let x = Math.floor(Math.max(viewport.x / chunkSize, 0)); x < Math.min(viewport.width + viewport.x, size.current.width) / chunkSize; x++) {
             for (let y = Math.floor(Math.max(viewport.y / chunkSize, 0)); y < Math.min(viewport.height + viewport.y, size.current.height) / chunkSize; y++) {
                 const key = `${x};${y}`
@@ -88,7 +88,8 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
                     setColors(data.colors)
                     size.current = {
                         width: data.sizeX,
-                        height: data.sizeY
+                        height: data.sizeY,
+                        chunkSize: data.chunkSize
                     }
                     if (!image.current) {
                         const canvas = document.createElement('canvas')
@@ -100,6 +101,10 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
                     break
                 }
                 case 'full': {
+                    const chunkSize = size.current?.chunkSize
+                    if (!chunkSize) {
+                        break
+                    }
                     const x = data.x * chunkSize
                     const y = data.y * chunkSize
                     const canvas = document.createElement('canvas')
@@ -117,6 +122,10 @@ export function useWs(room: string, viewport: { x: number, y: number, width: num
                     break
                 }
                 case 'diff': {
+                    const chunkSize = size.current?.chunkSize
+                    if (!chunkSize) {
+                        break
+                    }
                     const x = data.x * chunkSize
                     const y = data.y * chunkSize
                     const canvas = document.createElement('canvas')
