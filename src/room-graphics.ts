@@ -103,16 +103,27 @@ export class RoomGraphics {
         this.history.push({ x, y, color, timestamp: new Date() })
         const parsedColor = this._parseColor(color)
         const offset = (x + y * this.chunkSize) * 4
-        this.fullCanvas.set(parsedColor, offset)
-        this.drawCanvas.set(parsedColor, offset)
+        this._setColor(offset, this.fullCanvas, parsedColor)
+        this._setColor(offset, this.drawCanvas, parsedColor)
         this.saveThrottled()
     }
 
-    private _parseColor(hexColor: string): Uint8Array {
-        const r = parseInt(hexColor.slice(1, 3), 16)
-        const g = parseInt(hexColor.slice(3, 5), 16)
-        const b = parseInt(hexColor.slice(5, 7), 16)
-        return new Uint8Array([r, g, b, 255])
+    private _setColor(offset: number, array: Uint8Array, color: [number, number, number, number]) {
+        array[offset] = color[0]
+        array[offset + 1] = color[1]
+        array[offset + 2] = color[2]
+        array[offset + 3] = color[3]
+    }
+
+    private _colorCache: { [key: string]: [number, number, number, number] } = {}
+    private _parseColor(hexColor: string): [number, number, number, number] {
+        if (!this._colorCache[hexColor]) {
+            const r = parseInt(hexColor.slice(1, 3), 16)
+            const g = parseInt(hexColor.slice(3, 5), 16)
+            const b = parseInt(hexColor.slice(5, 7), 16)
+            this._colorCache[hexColor] = [r, g, b, 255]
+        }
+        return this._colorCache[hexColor]
     }
 
     listenSave(callback: () => void) {
