@@ -29,10 +29,9 @@ async function loadImage(url: string): Promise<HTMLCanvasElement> {
             const ctx = canvas.getContext('2d')
             canvas.width = decoded.width
             canvas.height = decoded.height
-            const imageData = new ImageData(decoded.width, decoded.height, {
+            const imageData = new ImageData(new Uint8ClampedArray(decoded.data), decoded.width, decoded.height, {
                 colorSpace: 'srgb'
             })
-            imageData.data.set(decoded.data)
             ctx?.putImageData(imageData, 0, 0)
             return canvas
         }
